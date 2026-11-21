@@ -1,4 +1,4 @@
-# Jetpack Escape
+# Tsunami Surf
 
 Jogo feito em Python com **Pygame** (versão `pygame-ce`) para a disciplina Design de Software (Insper).
 
@@ -6,12 +6,12 @@ Jogo feito em Python com **Pygame** (versão `pygame-ce`) para a disciplina Desi
 
 - Felipe (GitHub: Felipec246)
 - Ricardo (GitHub: RicardoCastro08)
--Jose(GitHub: jose-porto)
+- Jose (GitHub: jose-porto)
 
 ## Sobre o jogo
 
-O jogador voa com um jetpack: **segurando ESPAÇO ele sobe**, soltando ele cai por causa da gravidade.
-Obstáculos vêm da direita e é preciso desviar deles. Quanto mais tempo sobreviver, maior a distância percorrida.
+Um tsunami invadiu a cidade e o jogador está surfando a onda: **segurando ESPAÇO ele sobe**, soltando ele cai de volta na água por causa da gravidade.
+Prédios e aviões vêm da direita e é preciso desviar deles. Quanto mais tempo sobreviver, maior a distância percorrida.
 Ao bater em um obstáculo, o jogo acaba; aperte **R** para recomeçar.
 
 ## Como rodar
