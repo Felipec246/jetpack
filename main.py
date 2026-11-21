@@ -19,8 +19,6 @@ VEL_MAXIMA = 10          # velocidade vertical máxima
 VEL_INICIAL = 6          # velocidade inicial dos obstáculos (pixels por frame)
 INTERVALO_OBSTACULO = 80 # frames entre um obstáculo e outro (no começo)
 INTERVALO_MINIMO = 50    # o intervalo nunca fica menor que isso
-LARGURA_TORRE = 70
-TAMANHO_BURACO = 150     # altura do buraco da torre por onde o surfista passa
 NIVEL_AGUA = HEIGHT - 60 # y da superfície da água (o "chão" do surfista)
 
 # Face do tsunami: uma rampa reta do ponto mais alto (topo) até a água (base).
@@ -33,6 +31,8 @@ COR_CEU = (110, 130, 160)
 COR_CIDADE_FUNDO = (90, 105, 135)
 COR_PREDIO = (90, 90, 100)
 COR_JANELA = (240, 220, 120)
+COR_POSTE = (50, 50, 55)
+COR_PEIXE = (150, 190, 210)
 COR_AGUA = (20, 90, 150)
 COR_TSUNAMI = (15, 70, 130)
 COR_ESPUMA = (235, 245, 255)
@@ -98,20 +98,32 @@ def cria_cidade_fundo():
 
 
 # ===== Funções que criam obstáculos e quilhas =====
-def nova_torre():
-    """Cria uma torre com um buraco numa altura aleatória.
-    A torre é um dicionário com duas partes (retângulos): a de cima e a de baixo do buraco."""
-    buraco_topo = random.randint(ONDA_TOPO_Y - 60, NIVEL_AGUA - TAMANHO_BURACO + 10)
-    buraco_base = buraco_topo + TAMANHO_BURACO
-    cima = pygame.Rect(WIDTH, 0, LARGURA_TORRE, buraco_topo)
-    baixo = pygame.Rect(WIDTH, buraco_base, LARGURA_TORRE, HEIGHT - buraco_base)
-    return {"cima": cima, "baixo": baixo}
+def novo_predio():
+    """Cria um prédio baixo saindo da água."""
+    altura_visivel = random.randint(80, 190)
+    largura = random.randint(50, 80)
+    topo = NIVEL_AGUA - altura_visivel
+    return pygame.Rect(WIDTH, topo, largura, HEIGHT - topo)
+
+
+def novo_poste():
+    """Cria um poste fino saindo da água."""
+    altura_visivel = random.randint(100, 180)
+    topo = NIVEL_AGUA - altura_visivel
+    return pygame.Rect(WIDTH, topo, 14, HEIGHT - topo)
 
 
 def novo_aviao():
-    """Cria um avião voando na altura da onda (inclusive no topo, onde o surfista se esconde)."""
-    y = random.randint(ONDA_TOPO_Y - 45, 330)
+    """Cria um avião na parte de CIMA da onda (para o topo não ser um lugar seguro)."""
+    y = random.randint(ONDA_TOPO_Y - 45, 220)
     return pygame.Rect(WIDTH, y, 80, 26)
+
+
+def novo_peixe():
+    """Cria um peixe voador. Ele é um dicionário: o retângulo e a altura central do voo
+    (o peixe sobe e desce em volta dessa altura)."""
+    altura_central = random.randint(220, 380)   # parte do MEIO da onda
+    return {"rect": pygame.Rect(WIDTH, altura_central, 30, 14), "altura_central": altura_central}
 
 
 def nova_quilha():
@@ -127,24 +139,19 @@ def x_da_onda(y):
 
 
 # ===== Funções de desenho =====
-def desenha_bloco(bloco):
-    """Desenha um pedaço de prédio cinza com janelas acesas."""
-    pygame.draw.rect(window, COR_PREDIO, bloco)
-    for jx in range(bloco.left + 10, bloco.right - 10, 20):
-        for jy in range(bloco.top + 10, min(bloco.bottom, NIVEL_AGUA) - 12, 25):
+def desenha_predio(predio):
+    """Desenha um prédio cinza com janelas acesas."""
+    pygame.draw.rect(window, COR_PREDIO, predio)
+    for jx in range(predio.left + 10, predio.right - 10, 20):
+        for jy in range(predio.top + 10, NIVEL_AGUA - 12, 25):
             pygame.draw.rect(window, COR_JANELA, (jx, jy, 10, 12))
 
 
-def desenha_torre(torre):
-    """Desenha as duas partes da torre e pontas quebradas em volta do buraco."""
-    cima = torre["cima"]
-    baixo = torre["baixo"]
-    desenha_bloco(cima)
-    desenha_bloco(baixo)
-    # Pontas quebradas: triângulos pequenos na borda do buraco
-    for x in range(cima.left, cima.right, 14):
-        pygame.draw.polygon(window, COR_PREDIO, [(x, cima.bottom), (x + 14, cima.bottom), (x + 7, cima.bottom + 8)])
-        pygame.draw.polygon(window, COR_PREDIO, [(x, baixo.top), (x + 14, baixo.top), (x + 7, baixo.top - 8)])
+def desenha_poste(poste):
+    """Desenha um poste com um braço e uma lâmpada acesa na ponta."""
+    pygame.draw.rect(window, COR_POSTE, poste)
+    pygame.draw.line(window, COR_POSTE, (poste.centerx, poste.top + 4), (poste.centerx - 22, poste.top + 4), 5)
+    pygame.draw.circle(window, COR_JANELA, (poste.centerx - 22, poste.top + 10), 6)
 
 
 def desenha_aviao(aviao):
@@ -160,6 +167,17 @@ def desenha_aviao(aviao):
     pygame.draw.polygon(window, CINZA, cauda)
     for i in range(4):  # janelinhas
         pygame.draw.circle(window, (60, 120, 200), (aviao.left + 15 + i * 10, aviao.centery - 3), 3)
+
+
+def desenha_peixe(peixe):
+    """Desenha um peixe voador virado para a esquerda, com uma nadadeira grande que parece asa."""
+    r = peixe["rect"]
+    pygame.draw.ellipse(window, COR_PEIXE, r)                                     # corpo
+    rabo = [(r.right - 4, r.centery), (r.right + 10, r.top - 4), (r.right + 10, r.bottom + 4)]
+    pygame.draw.polygon(window, COR_PEIXE, rabo)
+    asa = [(r.centerx - 4, r.centery), (r.centerx + 10, r.top - 10), (r.centerx + 8, r.centery)]
+    pygame.draw.polygon(window, BRANCO, asa)                                      # "asa"
+    pygame.draw.circle(window, PRETO, (r.left + 6, r.centery - 2), 2)             # olho
 
 
 def desenha_quilha(quilha, tempo):
@@ -225,8 +243,10 @@ player = pygame.Rect(0, NIVEL_AGUA - 40, 40, 40)  # hitbox do surfista (o x é c
 player_y = player.y   # posição y "de verdade" (com casas decimais)
 vel_y = 0
 subindo = False       # True quando está subindo a onda (de costas)
-torres = []           # lista de dicionários {"cima": Rect, "baixo": Rect}
+predios = []
+postes = []
 avioes = []
+peixes = []           # lista de dicionários {"rect": Rect, "altura_central": número}
 quilhas = []
 contador = 0          # conta frames até criar o próximo obstáculo
 pontos = 0
@@ -250,8 +270,10 @@ while game:
         if event.type == pygame.KEYDOWN and event.key == pygame.K_r and game_over:
             player_y = NIVEL_AGUA - player.height
             vel_y = 0
-            torres = []
+            predios = []
+            postes = []
             avioes = []
+            peixes = []
             quilhas = []
             contador = 0
             pontos = 0
@@ -297,13 +319,20 @@ while game:
         if vel_y > 0:
             subindo = False
 
-        # Cria um obstáculo quando o contador chega no intervalo
+        # Cria um obstáculo quando o contador chega no intervalo (sorteia qual)
         contador += 1
         if contador >= intervalo:
-            if random.random() < 0.6:   # 60% torre, 40% avião
-                torres.append(nova_torre())
-            else:
+            # Cada zona da onda tem seu obstáculo: avião em cima, peixe no meio,
+            # prédio e poste embaixo. Repetir um nome na lista aumenta a chance dele.
+            tipo = random.choice(["predio", "poste", "aviao", "aviao", "peixe", "peixe"])
+            if tipo == "predio":
+                predios.append(novo_predio())
+            elif tipo == "poste":
+                postes.append(novo_poste())
+            elif tipo == "aviao":
                 avioes.append(novo_aviao())
+            else:
+                peixes.append(novo_peixe())
             contador = 0
         # A quilha nasce na METADE do intervalo: sempre no meio do caminho entre dois
         # obstáculos. Como tudo anda na mesma velocidade, ela nunca fica dentro de um.
@@ -311,19 +340,28 @@ while game:
             quilhas.append(nova_quilha())
 
         # Move tudo para a esquerda na mesma velocidade
-        for torre in torres:
-            torre["cima"].x -= velocidade
-            torre["baixo"].x -= velocidade
+        for predio in predios:
+            predio.x -= velocidade
+        for poste in postes:
+            poste.x -= velocidade
         for aviao in avioes:
             aviao.x -= velocidade
+        for peixe in peixes:
+            peixe["rect"].x -= velocidade
+            # O peixe sobe e desce 30 pixels em volta da altura central (seno do x)
+            peixe["rect"].y = int(peixe["altura_central"] + 30 * math.sin(peixe["rect"].x / 40))
         for quilha in quilhas:
             quilha.x -= velocidade
 
         # Remove o obstáculo mais antigo de cada lista quando ele sai da tela
-        if len(torres) > 0 and torres[0]["cima"].right < 0:
-            torres.pop(0)
+        if len(predios) > 0 and predios[0].right < 0:
+            predios.pop(0)
+        if len(postes) > 0 and postes[0].right < 0:
+            postes.pop(0)
         if len(avioes) > 0 and avioes[0].right < 0:
             avioes.pop(0)
+        if len(peixes) > 0 and peixes[0]["rect"].right < 0:
+            peixes.pop(0)
 
         # Quilhas: as que o surfista pegou somem e contam ponto; as que saíram da tela somem
         restantes = []
@@ -334,12 +372,12 @@ while game:
                 restantes.append(quilha)
         quilhas = restantes
 
-        # Colisão: se encostar em uma torre (parte de cima ou de baixo) ou avião, perde
-        for torre in torres:
-            if player.colliderect(torre["cima"]) or player.colliderect(torre["baixo"]):
+        # Colisão: se encostar em qualquer obstáculo, perde
+        for obs in predios + postes + avioes:
+            if player.colliderect(obs):
                 game_over = True
-        for aviao in avioes:
-            if player.colliderect(aviao):
+        for peixe in peixes:
+            if player.colliderect(peixe["rect"]):
                 game_over = True
 
         # Cidade do fundo anda devagar (parece estar longe)
@@ -353,14 +391,18 @@ while game:
     window.fill(COR_CEU)                                 # céu
     window.blit(CIDADE_FUNDO, (fundo_x, 0))              # cidade do fundo (2 cópias lado a lado,
     window.blit(CIDADE_FUNDO, (fundo_x + WIDTH, 0))      # para nunca aparecer um buraco)
-    for torre in torres:
-        desenha_torre(torre)
+    for predio in predios:
+        desenha_predio(predio)
+    for poste in postes:
+        desenha_poste(poste)
     for aviao in avioes:
         desenha_aviao(aviao)
+    for peixe in peixes:
+        desenha_peixe(peixe)
     for quilha in quilhas:
         desenha_quilha(quilha, tempo)
     desenha_tsunami(tempo)                               # onda gigante (engole o que já passou)
-    desenha_agua(tempo * 3)                              # água por cima da base das torres
+    desenha_agua(tempo * 3)                              # água por cima da base dos prédios
     desenha_surfista(player, vel_y, subindo)
 
     texto_pontos = fonte.render(f"Distancia: {pontos // 10} m", True, BRANCO)
