@@ -11,6 +11,16 @@ clock = pygame.time.Clock()
 FPS = 60
 fonte = pygame.font.SysFont(None, 36)
 fonte_grande = pygame.font.SysFont(None, 48)
+pygame.mixer.init()
+
+pygame.mixer.music.load("assets/musica.mp3.mp3")
+pygame.mixer.music.set_volume(0.4)
+pygame.mixer.music.play(-1)
+
+som_quilha = pygame.mixer.Sound("assets/coletavel.mp3.mp3")
+som_morte = pygame.mixer.Sound("assets/morte.mp3.mp3")
+som_quilha.set_volume(0.7)
+som_morte.set_volume(0.8)
 
 # ===== Constantes do jogo =====
 GRAVIDADE = 0.5          # a cada frame, puxa o surfista um pouco para baixo
@@ -367,6 +377,7 @@ while game:
         restantes = []
         for quilha in quilhas:
             if player.colliderect(quilha):
+                som_quilha.play()
                 quilhas_coletadas += 1
             elif quilha.right > 0:
                 restantes.append(quilha)
@@ -375,9 +386,11 @@ while game:
         # Colisão: se encostar em qualquer obstáculo, perde
         for obs in predios + postes + avioes:
             if player.colliderect(obs):
+                som_morte.play()
                 game_over = True
         for peixe in peixes:
             if player.colliderect(peixe["rect"]):
+                som_morte.play()
                 game_over = True
 
         # Cidade do fundo anda devagar (parece estar longe)
