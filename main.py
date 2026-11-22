@@ -1,433 +1,734 @@
-import pygame
-import random
+"""Tsunami Surf - jogo em Pygame para a disciplina Design de Software (Insper).
+
+O jogo tem três telas, cada uma é uma função com o seu próprio loop:
+    tela_menu()  -> lobby: nome, personagem, loja de pranchas, cenários e recordes
+    tela_intro() -> a cidade tranquila... e chega o tsunami!
+    tela_jogo()  -> surfa até bater em alguma coisa
+Cada função devolve o nome da próxima tela ("menu", "intro", "jogo" ou "sair").
+"""
 import math
+import os
+import random
+
+import pygame
+
+import save
+import sons
+from config import *
+from desenho import *
 
 # ===== Inicialização =====
+pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.init()
-WIDTH, HEIGHT = 800, 600
 window = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Tsunami Surf")
 clock = pygame.time.Clock()
-FPS = 60
-fonte = pygame.font.SysFont(None, 36)
-fonte_grande = pygame.font.SysFont(None, 48)
-pygame.mixer.init()
+# Tudo é desenhado nesta superfície e depois copiado para a janela.
+# Assim dá para "tremer" a tela inteira só mudando onde ela é copiada.
+tela = pygame.Surface((WIDTH, HEIGHT))
 
-pygame.mixer.music.load("assets/musica.mp3.mp3")
-pygame.mixer.music.set_volume(0.4)
-pygame.mixer.music.play(-1)
+F_PEQ = pygame.font.Font(None, 24)
+F_MED = pygame.font.Font(None, 32)
+F_GRA = pygame.font.Font(None, 48)
+F_ENORME = pygame.font.Font(None, 80)
+F_TITULO = pygame.font.Font(None, 104)
 
-som_quilha = pygame.mixer.Sound("assets/coletavel.mp3.mp3")
-som_morte = pygame.mixer.Sound("assets/morte.mp3.mp3")
-som_quilha.set_volume(0.7)
-som_morte.set_volume(0.8)
-
-# ===== Constantes do jogo =====
-GRAVIDADE = 0.5          # a cada frame, puxa o surfista um pouco para baixo
-IMPULSO = -1.0           # força para subir (negativo = para cima)
-VEL_MAXIMA = 10          # velocidade vertical máxima
-VEL_INICIAL = 6          # velocidade inicial dos obstáculos (pixels por frame)
-INTERVALO_OBSTACULO = 80 # frames entre um obstáculo e outro (no começo)
-INTERVALO_MINIMO = 50    # o intervalo nunca fica menor que isso
-NIVEL_AGUA = HEIGHT - 60 # y da superfície da água (o "chão" do surfista)
-
-# Face do tsunami: uma rampa reta do ponto mais alto (topo) até a água (base).
-# O surfista sempre fica em cima dessa rampa.
-ONDA_TOPO_X, ONDA_TOPO_Y = 150, 170   # ponto mais alto que o surfista alcança
-ONDA_BASE_X = 280                     # onde a face da onda encontra a água
-
-# ===== Cores (R, G, B) =====
-COR_CEU = (110, 130, 160)
-COR_CIDADE_FUNDO = (90, 105, 135)
-COR_PREDIO = (90, 90, 100)
-COR_JANELA = (240, 220, 120)
-COR_POSTE = (50, 50, 55)
-COR_PEIXE = (150, 190, 210)
-COR_AGUA = (20, 90, 150)
-COR_TSUNAMI = (15, 70, 130)
-COR_ESPUMA = (235, 245, 255)
-COR_QUILHA = (255, 200, 30)
-BRANCO = (255, 255, 255)
-CINZA = (180, 180, 190)
-PRETO = (0, 0, 0)
-COR_PELE = (200, 150, 110)
-COR_ROUPA = (20, 20, 20)
-COR_CABELO = (30, 20, 10)
+# Na primeira vez o jogo cria a música do menu e os efeitos (demora uns segundos)
+window.fill((10, 30, 60))
+escreve(window, "Preparando as ondas...", F_MED, BRANCO, (WIDTH // 2, HEIGHT // 2), "center")
+pygame.display.flip()
+sons.gera_sons(ASSETS)
 
 
-# ===== Funções que criam imagens (feitas uma vez só, antes do loop) =====
-def cria_corpo():
-    """Desenha a prancha e o corpo do surfista (sem a cabeça) numa imagem 50x50 transparente."""
-    img = pygame.Surface((50, 50), pygame.SRCALPHA)  # SRCALPHA = fundo transparente
-    pygame.draw.ellipse(img, (250, 200, 60), (0, 40, 50, 9))      # prancha
-    pygame.draw.line(img, COR_ROUPA, (16, 41), (22, 30), 5)       # perna de trás
-    pygame.draw.line(img, COR_ROUPA, (34, 41), (28, 30), 5)       # perna da frente
-    pygame.draw.line(img, COR_ROUPA, (25, 31), (25, 18), 8)       # tronco
-    pygame.draw.line(img, COR_PELE, (6, 23), (44, 21), 4)         # braços abertos
-    return img
+# ===== Sons =====
+class SemSom:
+    """Usado quando o computador não tem saída de áudio: play() não faz nada."""
+    def play(self):
+        pass
 
 
-def cria_surfista_frente():
-    """Surfista olhando para fora da onda: dá para ver o rosto (olhos e sorriso)."""
-    img = cria_corpo()
-    pygame.draw.circle(img, COR_PELE, (25, 10), 8)                # cabeça
-    pygame.draw.ellipse(img, COR_CABELO, (16, 1, 18, 7))          # cabelo (só em cima)
-    pygame.draw.circle(img, PRETO, (22, 10), 2)                   # olho esquerdo
-    pygame.draw.circle(img, PRETO, (28, 10), 2)                   # olho direito
-    pygame.draw.arc(img, PRETO, (21, 10, 8, 6), math.pi, 2 * math.pi, 1)  # sorriso
-    return img
+def carrega_som(arquivo, volume):
+    try:
+        som = pygame.mixer.Sound(os.path.join(ASSETS, arquivo))
+        som.set_volume(volume)
+        return som
+    except (pygame.error, FileNotFoundError):
+        return SemSom()
 
 
-def cria_surfista_costas():
-    """Surfista virado para a onda: vemos só a nuca (cabeça toda de cabelo)."""
-    img = cria_corpo()
-    pygame.draw.circle(img, COR_CABELO, (25, 10), 8)              # cabeça vista de trás
-    pygame.draw.circle(img, COR_PELE, (17, 11), 2)                # orelha esquerda
-    pygame.draw.circle(img, COR_PELE, (33, 11), 2)                # orelha direita
-    return img
+SOM_QUILHA = carrega_som("coletavel.mp3.mp3", 0.7)
+SOM_MORTE = carrega_som("morte.mp3.mp3", 0.8)
+SOM_FASE = carrega_som("fase.wav", 0.6)
+SOM_COMPRA = carrega_som("compra.wav", 0.6)
+SOM_ERRO = carrega_som("erro.wav", 0.5)
+SOM_TROVAO = carrega_som("trovao.wav", 0.8)
+musica_atual = None
 
 
-def cria_brilho():
-    """Círculo amarelo meio transparente que fica atrás da quilha (mostra que é para pegar)."""
-    img = pygame.Surface((50, 50), pygame.SRCALPHA)
-    pygame.draw.circle(img, (255, 230, 60, 110), (25, 25), 24)    # o 4º número é a transparência
-    pygame.draw.circle(img, (255, 245, 150, 170), (25, 25), 16)   # (0 = invisível, 255 = sólido)
-    return img
+def toca_musica(arquivo, volume):
+    """Troca a música de fundo (se já estiver tocando essa, só ajusta o volume)."""
+    global musica_atual
+    try:
+        if arquivo != musica_atual:
+            pygame.mixer.music.load(os.path.join(ASSETS, arquivo))
+            pygame.mixer.music.play(-1, fade_ms=800)
+            musica_atual = arquivo
+        pygame.mixer.music.set_volume(volume)
+    except pygame.error:
+        pass
 
 
-def cria_cidade_fundo():
-    """Desenha silhuetas de prédios distantes numa imagem do tamanho da tela."""
-    img = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-    x = 0
-    while x < WIDTH:
-        largura = random.randint(40, 90)
-        altura = random.randint(80, 280)
-        pygame.draw.rect(img, COR_CIDADE_FUNDO, (x, NIVEL_AGUA - altura, largura, altura))
-        x += largura + random.randint(0, 15)
-    return img
+# ===== Dados e imagens prontas =====
+dados = save.carrega()
+VISUAIS = [monta_visual(c, i) for i, c in enumerate(CENARIOS)]
+MINIATURAS = [miniatura(v) for v in VISUAIS]
+fundo = {"nuvens": 0.0, "longe": 0.0, "meio": 0.0}  # posição de cada camada do fundo
+AREA = pygame.Rect(300, 100, 480, 480)              # painel da direita do menu
 
 
-# ===== Funções que criam obstáculos e quilhas =====
-def novo_predio():
-    """Cria um prédio baixo saindo da água."""
-    altura_visivel = random.randint(80, 190)
-    largura = random.randint(50, 80)
-    topo = NIVEL_AGUA - altura_visivel
-    return pygame.Rect(WIDTH, topo, largura, HEIGHT - topo)
+def mostra(tremor=0):
+    """Copia a tela para a janela (com um deslocamento aleatório se estiver tremendo)."""
+    tremor = int(tremor)
+    window.fill(PRETO)
+    window.blit(tela, (random.randint(-tremor, tremor), random.randint(-tremor, tremor)))
+    pygame.display.flip()
 
 
-def novo_poste():
-    """Cria um poste fino saindo da água."""
-    altura_visivel = random.randint(100, 180)
-    topo = NIVEL_AGUA - altura_visivel
-    return pygame.Rect(WIDTH, topo, 14, HEIGHT - topo)
+def formata_tempo(segundos):
+    segundos = int(segundos)
+    return f"{segundos // 60}:{segundos % 60:02d}"
 
 
-def novo_aviao():
-    """Cria um avião na parte de CIMA da onda (para o topo não ser um lugar seguro)."""
-    y = random.randint(ONDA_TOPO_Y - 45, 220)
-    return pygame.Rect(WIDTH, y, 80, 26)
+def escreve_transparente(msg, fonte, cor, centro, alpha):
+    img = fonte.render(msg, True, cor)
+    img.set_alpha(max(0, min(255, int(alpha))))
+    tela.blit(img, img.get_rect(center=centro))
 
 
-def novo_peixe():
-    """Cria um peixe voador. Ele é um dicionário: o retângulo e a altura central do voo
-    (o peixe sobe e desce em volta dessa altura)."""
-    altura_central = random.randint(220, 380)   # parte do MEIO da onda
-    return {"rect": pygame.Rect(WIDTH, altura_central, 30, 14), "altura_central": altura_central}
+# =====================================================================
+# ============================== MENU =================================
+# =====================================================================
+letras_titulo = []
 
 
-def nova_quilha():
-    """Cria uma quilha numa altura que o surfista consegue alcançar."""
-    y = random.randint(ONDA_TOPO_Y - 35, NIVEL_AGUA - 35)
-    return pygame.Rect(WIDTH, y, 24, 30)
+def desenha_titulo(t):
+    """'TSUNAMI SURF' com as letras balançando como uma onda."""
+    if not letras_titulo:
+        for letra in "TSUNAMI SURF":
+            letras_titulo.append((F_TITULO.render(letra, True, (10, 40, 90)),
+                                  F_TITULO.render(letra, True, (60, 190, 255)),
+                                  F_TITULO.render(letra, True, BRANCO)))
+    x = WIDTH // 2 - sum(l[2].get_width() for l in letras_titulo) // 2
+    for i, (sombra, cor, img) in enumerate(letras_titulo):
+        y = 14 + 5 * math.sin(t / 12 + i * 0.6)
+        tela.blit(sombra, (x + 5, y + 6))
+        tela.blit(cor, (x + 2, y + 3))
+        tela.blit(img, (x, y))
+        x += img.get_width()
 
 
-def x_da_onda(y):
-    """Diz em qual x está a face do tsunami na altura y (interpolação linear na rampa)."""
-    fracao = (y - ONDA_TOPO_Y) / (NIVEL_AGUA - ONDA_TOPO_Y)  # 0 no topo, 1 na água
-    return ONDA_TOPO_X + (ONDA_BASE_X - ONDA_TOPO_X) * fracao
+def painel_inicio(t):
+    escreve(tela, "COMO JOGAR", F_GRA, DOURADO, (AREA.centerx, AREA.y + 32), "center")
+    img = sprite(dados["personagem"], dados["prancha"], False, 3)
+    tela.blit(img, img.get_rect(center=(AREA.x + 95, AREA.y + 215 + 6 * math.sin(t / 20))))
+    escreve(tela, PERSONAGENS[dados["personagem"]]["nome"], F_MED, BRANCO, (AREA.x + 95, AREA.y + 320), "center")
+    escreve(tela, PRANCHAS[dados["prancha"]]["nome"], F_PEQ, CINZA, (AREA.x + 95, AREA.y + 345), "center")
+    dicas = [("Segure ESPAÇO (ou o mouse)", BRANCO), ("para subir na onda", CINZA),
+             ("Desvie dos obstáculos:", BRANCO), ("prédios, postes, peixes, aviões", CINZA),
+             ("Pegue as QUILHAS douradas", DOURADO), ("e compre pranchas na loja", CINZA),
+             ("A cada fase fica mais rápido", BRANCO), ("e os pontos multiplicam!", CINZA),
+             ("Recordes liberam cenários", BRANCO), ("P = pausa", CINZA)]
+    for i, (texto, cor) in enumerate(dicas):
+        escreve(tela, texto, F_PEQ, cor, (AREA.x + 185, AREA.y + 78 + i * 28))
 
 
-# ===== Funções de desenho =====
-def desenha_predio(predio):
-    """Desenha um prédio cinza com janelas acesas."""
-    pygame.draw.rect(window, COR_PREDIO, predio)
-    for jx in range(predio.left + 10, predio.right - 10, 20):
-        for jy in range(predio.top + 10, NIVEL_AGUA - 12, 25):
-            pygame.draw.rect(window, COR_JANELA, (jx, jy, 10, 12))
+def painel_personagem(mouse, clique):
+    escreve(tela, "ESCOLHA SEU SURFISTA", F_GRA, DOURADO, (AREA.centerx, AREA.y + 32), "center")
+    for i, p in enumerate(PERSONAGENS):
+        card = pygame.Rect(AREA.x + 15 + (i % 3) * 152, AREA.y + 62 + (i // 3) * 205, 142, 195)
+        em_cima = card.collidepoint(mouse)
+        painel(tela, card, cor=(30, 60, 100) if em_cima else (20, 45, 80), alpha=230,
+               borda=DOURADO if dados["personagem"] == i else None, raio=10)
+        img = sprite(i, dados["prancha"], False, 2)
+        tela.blit(img, img.get_rect(midtop=(card.centerx, card.y + 8)))
+        escreve(tela, p["nome"], F_MED, BRANCO, (card.centerx, card.y + 137), "center")
+        escreve(tela, p["desc"][0], F_PEQ, CINZA, (card.centerx, card.y + 160), "center")
+        escreve(tela, p["desc"][1], F_PEQ, CINZA, (card.centerx, card.y + 179), "center")
+        if em_cima and clique:
+            dados["personagem"] = i
+            save.salva(dados)
 
 
-def desenha_poste(poste):
-    """Desenha um poste com um braço e uma lâmpada acesa na ponta."""
-    pygame.draw.rect(window, COR_POSTE, poste)
-    pygame.draw.line(window, COR_POSTE, (poste.centerx, poste.top + 4), (poste.centerx - 22, poste.top + 4), 5)
-    pygame.draw.circle(window, COR_JANELA, (poste.centerx - 22, poste.top + 10), 6)
+def painel_pranchas(mouse, clique):
+    """Loja: compra com quilhas e equipa pranchas. Devolve uma mensagem (ou None)."""
+    escreve(tela, "LOJA DE PRANCHAS", F_GRA, DOURADO, (AREA.centerx, AREA.y + 32), "center")
+    msg = None
+    for i, pr in enumerate(PRANCHAS):
+        linha = pygame.Rect(AREA.x + 12, AREA.y + 62 + i * 82, AREA.w - 24, 74)
+        equipada = dados["prancha"] == i
+        painel(tela, linha, cor=(20, 45, 80), alpha=220, borda=DOURADO if equipada else None, raio=10)
+        desenha_prancha(tela, pr, pygame.Rect(linha.x + 12, linha.y + 28, 110, 16))
+        escreve(tela, pr["nome"], F_MED, BRANCO, (linha.x + 135, linha.y + 8))
+        escreve(tela, pr["desc"], F_PEQ, CINZA, (linha.x + 135, linha.y + 33))
+        barras = (("VEL", (pr["agilidade"] - 0.8) / 0.7), ("ALT", (pr["altura"] + 25) / 135))
+        for j, (rotulo, valor) in enumerate(barras):
+            bx = linha.x + 135 + j * 95
+            escreve(tela, rotulo, F_PEQ, CINZA, (bx, linha.y + 52), sombra=False)
+            pygame.draw.rect(tela, (40, 55, 80), (bx + 36, linha.y + 56, 50, 8), border_radius=4)
+            pygame.draw.rect(tela, VERDE, (bx + 36, linha.y + 56, int(50 * valor), 8), border_radius=4)
+        bt = pygame.Rect(linha.right - 128, linha.y + 17, 116, 40)
+        if equipada:
+            pygame.draw.rect(tela, (40, 150, 80), bt, border_radius=12)
+            escreve(tela, "EQUIPADA", F_PEQ, BRANCO, bt.center, "center")
+        elif i in dados["pranchas"]:
+            if botao(tela, bt, "EQUIPAR", F_MED, mouse, clique):
+                dados["prancha"] = i
+                save.salva(dados)
+        else:
+            pode = dados["quilhas"] >= pr["preco"]
+            if botao(tela, bt, f"    {pr['preco']}", F_MED, mouse, clique, cor=(190, 140, 20) if pode else (95, 85, 70)):
+                if pode:
+                    dados["quilhas"] -= pr["preco"]
+                    dados["pranchas"].append(i)
+                    dados["prancha"] = i
+                    save.salva(dados)
+                    SOM_COMPRA.play()
+                    msg = f"Você comprou a {pr['nome']}!"
+                else:
+                    SOM_ERRO.play()
+                    msg = f"Faltam {pr['preco'] - dados['quilhas']} quilhas!"
+            desenha_quilha(tela, bt.x + 16, bt.y + 9, escala=0.75, com_brilho=False)
+    return msg
 
 
-def desenha_aviao(aviao):
-    """Desenha um avião virado para a esquerda (bico à esquerda, cauda à direita)."""
-    pygame.draw.ellipse(window, BRANCO, aviao)  # corpo
-    asa = [(aviao.centerx - 5, aviao.centery),
-           (aviao.centerx + 15, aviao.centery),
-           (aviao.centerx + 5, aviao.bottom + 12)]
-    pygame.draw.polygon(window, CINZA, asa)
-    cauda = [(aviao.right - 15, aviao.centery),
-             (aviao.right, aviao.centery),
-             (aviao.right, aviao.top - 12)]
-    pygame.draw.polygon(window, CINZA, cauda)
-    for i in range(4):  # janelinhas
-        pygame.draw.circle(window, (60, 120, 200), (aviao.left + 15 + i * 10, aviao.centery - 3), 3)
-
-
-def desenha_peixe(peixe):
-    """Desenha um peixe voador virado para a esquerda, com uma nadadeira grande que parece asa."""
-    r = peixe["rect"]
-    pygame.draw.ellipse(window, COR_PEIXE, r)                                     # corpo
-    rabo = [(r.right - 4, r.centery), (r.right + 10, r.top - 4), (r.right + 10, r.bottom + 4)]
-    pygame.draw.polygon(window, COR_PEIXE, rabo)
-    asa = [(r.centerx - 4, r.centery), (r.centerx + 10, r.top - 10), (r.centerx + 8, r.centery)]
-    pygame.draw.polygon(window, BRANCO, asa)                                      # "asa"
-    pygame.draw.circle(window, PRETO, (r.left + 6, r.centery - 2), 2)             # olho
-
-
-def desenha_quilha(quilha, tempo):
-    """Desenha uma quilha dourada com brilho, balançando para cima e para baixo."""
-    balanco = int(4 * math.sin(tempo / 8))  # só o desenho balança; a hitbox fica parada
-    x = quilha.x
-    y = quilha.y + balanco
-    window.blit(BRILHO, (quilha.centerx - 25, quilha.centery - 25 + balanco))
-    # Formato de quilha: base reta embaixo, frente curva subindo até a ponta lá atrás
-    forma = [(x + 2, y + 30), (x + 4, y + 20), (x + 8, y + 12), (x + 14, y + 5), (x + 22, y),
-             (x + 20, y + 8), (x + 19, y + 16), (x + 20, y + 24), (x + 24, y + 30)]
-    pygame.draw.polygon(window, COR_QUILHA, forma)
-    pygame.draw.polygon(window, BRANCO, forma, 2)  # contorno branco
-
-
-def desenha_agua(deslocamento):
-    """Desenha a água com ondinhas que andam para a esquerda (usando seno)."""
-    pontos_onda = []
-    for x in range(0, WIDTH + 10, 10):
-        y = NIVEL_AGUA + 6 * math.sin((x + deslocamento) / 30)
-        pontos_onda.append((x, y))
-    pygame.draw.polygon(window, COR_AGUA, pontos_onda + [(WIDTH, HEIGHT), (0, HEIGHT)])
-    pygame.draw.lines(window, COR_ESPUMA, False, pontos_onda, 3)  # espuma na superfície
-
-
-def desenha_tsunami(tempo):
-    """Desenha a onda gigante: a crista curvada em cima e a face onde o surfista desliza."""
-    o = 5 * math.sin(tempo / 15)  # faz só a crista "respirar" (a face fica parada)
-    forma = [(0, HEIGHT), (0, 90 + o), (60, 60 + o), (130, 55 + o), (190, 70 + o),
-             (230, 95 + o), (240, 125 + o),                     # ponta da crista
-             (215, 110 + o), (185, 105 + o), (160, 125 + o),    # parte de dentro do tubo
-             (ONDA_TOPO_X, ONDA_TOPO_Y),                        # topo da face
-             (ONDA_BASE_X, NIVEL_AGUA), (ONDA_BASE_X, HEIGHT)]  # base da face
-    pygame.draw.polygon(window, COR_TSUNAMI, forma)
-    # Espuma na crista
-    for (x, y) in [(20, 85), (60, 62), (100, 55), (140, 58), (180, 68), (215, 85), (236, 112)]:
-        pygame.draw.circle(window, COR_ESPUMA, (x, y + o), 9)
-    # Linha de espuma descendo pela face
-    pygame.draw.line(window, COR_ESPUMA, (ONDA_TOPO_X, ONDA_TOPO_Y), (ONDA_BASE_X, NIVEL_AGUA), 3)
-
-
-def desenha_surfista(player, vel_y, subindo):
-    """Desenha o surfista: de costas e virado para a esquerda quando sobe a onda,
-    de frente (rosto visível) e virado para a direita quando desce."""
-    if subindo:
-        img = pygame.transform.flip(SURFISTA_COSTAS, True, False)  # espelha na horizontal
-    else:
-        img = SURFISTA_FRENTE
-    # Quanto mais rápido, mais inclinado (no máximo 30 graus).
-    angulo = min(30, abs(vel_y) * 4)
-    img = pygame.transform.rotate(img, -angulo)
-    window.blit(img, img.get_rect(center=player.center))
-
-
-# ===== Imagens prontas =====
-SURFISTA_FRENTE = cria_surfista_frente()
-SURFISTA_COSTAS = cria_surfista_costas()
-BRILHO = cria_brilho()
-CIDADE_FUNDO = cria_cidade_fundo()
-
-# ===== Estado do jogo =====
-player = pygame.Rect(0, NIVEL_AGUA - 40, 40, 40)  # hitbox do surfista (o x é calculado pela onda)
-player_y = player.y   # posição y "de verdade" (com casas decimais)
-vel_y = 0
-subindo = False       # True quando está subindo a onda (de costas)
-predios = []
-postes = []
-avioes = []
-peixes = []           # lista de dicionários {"rect": Rect, "altura_central": número}
-quilhas = []
-contador = 0          # conta frames até criar o próximo obstáculo
-pontos = 0
-quilhas_coletadas = 0
-fundo_x = 0           # posição horizontal da cidade do fundo
-tempo = 0             # conta frames desde o início (usado nas animações)
-game_over = False
-
-
-# ===== Loop principal =====
-game = True
-while game:
-    clock.tick(FPS)
-    tempo += 1
-
-    # 1) Trata eventos (teclado, mouse, fechar a janela)
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            game = False
-        # Apertar R depois de perder recomeça o jogo
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_r and game_over:
-            player_y = NIVEL_AGUA - player.height
-            vel_y = 0
-            predios = []
-            postes = []
-            avioes = []
-            peixes = []
-            quilhas = []
-            contador = 0
-            pontos = 0
-            quilhas_coletadas = 0
-            game_over = False
-
-    # 2) Atualiza o estado do jogo (só enquanto não perdeu)
-    if not game_over:
-        # Dificuldade: quanto maior a distância, mais rápido e mais obstáculos
-        velocidade = int(VEL_INICIAL + pontos / 900)
-        intervalo = max(INTERVALO_MINIMO, INTERVALO_OBSTACULO - pontos // 120)
-
-        # Segurando ESPAÇO, a velocidade vai para cima
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_SPACE]:
-            vel_y += IMPULSO
-        vel_y += GRAVIDADE  # a gravidade age sempre
-
-        # Limita a velocidade
-        if vel_y > VEL_MAXIMA:
-            vel_y = VEL_MAXIMA
-        if vel_y < -VEL_MAXIMA:
-            vel_y = -VEL_MAXIMA
-
-        # Move o surfista
-        player_y += vel_y
-
-        # Não deixa passar do topo da onda nem afundar na água
-        if player_y < ONDA_TOPO_Y - player.height:
-            player_y = ONDA_TOPO_Y - player.height
-            vel_y = 0
-        if player_y > NIVEL_AGUA - player.height + 5:
-            player_y = NIVEL_AGUA - player.height + 5
-            vel_y = 0
-        player.y = int(player_y)
-        # Encosta o surfista na face da onda: o x depende da altura dos pés (player.bottom)
-        player.centerx = int(x_da_onda(player.bottom))
-
-        # Subindo (vel_y < 0) = de costas; descendo (vel_y > 0) = de frente.
-        # Se vel_y for 0 (parado no topo ou na água), continua como estava.
-        if vel_y < 0:
-            subindo = True
-        if vel_y > 0:
-            subindo = False
-
-        # Cria um obstáculo quando o contador chega no intervalo (sorteia qual)
-        contador += 1
-        if contador >= intervalo:
-            # Cada zona da onda tem seu obstáculo: avião em cima, peixe no meio,
-            # prédio e poste embaixo. Repetir um nome na lista aumenta a chance dele.
-            tipo = random.choice(["predio", "poste", "aviao", "aviao", "peixe", "peixe"])
-            if tipo == "predio":
-                predios.append(novo_predio())
-            elif tipo == "poste":
-                postes.append(novo_poste())
-            elif tipo == "aviao":
-                avioes.append(novo_aviao())
+def painel_cenarios(mouse, clique):
+    melhor = save.melhor_pontuacao(dados)
+    escreve(tela, "CENÁRIOS", F_GRA, DOURADO, (AREA.centerx, AREA.y + 32), "center")
+    escreve(tela, f"Melhor pontuação: {melhor}", F_PEQ, CINZA, (AREA.centerx, AREA.y + 62), "center")
+    msg = None
+    for i, cen in enumerate(CENARIOS):
+        card = pygame.Rect(AREA.x + 20 + (i % 2) * 225, AREA.y + 82 + (i // 2) * 195, 215, 185)
+        liberado = melhor >= cen["req"]
+        escolhido = dados["cenario"] == i
+        em_cima = card.collidepoint(mouse)
+        painel(tela, card, cor=(30, 60, 100) if em_cima else (20, 45, 80), alpha=230,
+               borda=DOURADO if escolhido else None, raio=10)
+        foto = pygame.Rect(card.x + 7, card.y + 7, 201, 115)
+        tela.blit(MINIATURAS[i], foto)
+        if not liberado:
+            sombra = pygame.Surface(foto.size, pygame.SRCALPHA)
+            sombra.fill((0, 0, 0, 160))
+            tela.blit(sombra, foto)
+            desenha_cadeado(tela, foto.centerx, foto.centery)
+        escreve(tela, cen["nome"], F_MED, BRANCO, (card.centerx, card.y + 142), "center")
+        if escolhido:
+            status, cor = "SELECIONADO", DOURADO
+        elif liberado:
+            status, cor = "clique para usar", VERDE
+        else:
+            status, cor = f"faça {cen['req']} pontos", (255, 130, 110)
+        escreve(tela, status, F_PEQ, cor, (card.centerx, card.y + 167), "center")
+        if em_cima and clique:
+            if liberado:
+                dados["cenario"] = i
+                save.salva(dados)
             else:
-                peixes.append(novo_peixe())
-            contador = 0
-        # A quilha nasce na METADE do intervalo: sempre no meio do caminho entre dois
-        # obstáculos. Como tudo anda na mesma velocidade, ela nunca fica dentro de um.
-        if contador == intervalo // 2:
-            quilhas.append(nova_quilha())
+                SOM_ERRO.play()
+                msg = f"Faça {cen['req']} pontos para liberar: {cen['nome']}"
+    return msg
 
-        # Move tudo para a esquerda na mesma velocidade
-        for predio in predios:
-            predio.x -= velocidade
-        for poste in postes:
-            poste.x -= velocidade
-        for aviao in avioes:
-            aviao.x -= velocidade
-        for peixe in peixes:
-            peixe["rect"].x -= velocidade
-            # O peixe sobe e desce 30 pixels em volta da altura central (seno do x)
-            peixe["rect"].y = int(peixe["altura_central"] + 30 * math.sin(peixe["rect"].x / 40))
-        for quilha in quilhas:
-            quilha.x -= velocidade
 
-        # Remove o obstáculo mais antigo de cada lista quando ele sai da tela
-        if len(predios) > 0 and predios[0].right < 0:
-            predios.pop(0)
-        if len(postes) > 0 and postes[0].right < 0:
-            postes.pop(0)
-        if len(avioes) > 0 and avioes[0].right < 0:
-            avioes.pop(0)
-        if len(peixes) > 0 and peixes[0]["rect"].right < 0:
-            peixes.pop(0)
+def painel_recordes():
+    escreve(tela, "RECORDES", F_GRA, DOURADO, (AREA.centerx, AREA.y + 32), "center")
+    lista = dados["recordes"][:8]
+    if not lista:
+        escreve(tela, "Ninguém surfou ainda...", F_MED, BRANCO, AREA.center, "center")
+        escreve(tela, "Seja o primeiro!", F_MED, DOURADO, (AREA.centerx, AREA.centery + 35), "center")
+        return
+    y0 = AREA.y + 70
+    for texto, x, ancora in (("#", 30, "topleft"), ("NOME", 70, "topleft"),
+                             ("PONTOS", 330, "topright"), ("TEMPO", 440, "topright")):
+        escreve(tela, texto, F_PEQ, CINZA, (AREA.x + x, y0), ancora)
+    medalhas = [DOURADO, (210, 210, 225), (210, 130, 60)]  # ouro, prata, bronze
+    for i, r in enumerate(lista):
+        y = y0 + 32 + i * 42
+        if r["nome"].lower() == dados["nome"].lower():  # destaca o jogador atual
+            painel(tela, (AREA.x + 15, y - 8, AREA.w - 30, 38), cor=(60, 120, 200), alpha=90, raio=8)
+        cor = medalhas[i] if i < 3 else BRANCO
+        escreve(tela, i + 1, F_MED, cor, (AREA.x + 30, y))
+        escreve(tela, r["nome"], F_MED, cor, (AREA.x + 70, y))
+        escreve(tela, r["pontos"], F_MED, cor, (AREA.x + 330, y), "topright")
+        escreve(tela, formata_tempo(r.get("tempo", 0)), F_MED, cor, (AREA.x + 440, y), "topright")
+    proximos = [c for c in CENARIOS if c["req"] > save.melhor_pontuacao(dados)]
+    if proximos:
+        escreve(tela, f"Próximo cenário: {proximos[0]['nome']} com {proximos[0]['req']} pontos",
+                F_PEQ, CINZA, (AREA.centerx, AREA.bottom - 25), "center")
 
-        # Quilhas: as que o surfista pegou somem e contam ponto; as que saíram da tela somem
-        restantes = []
-        for quilha in quilhas:
-            if player.colliderect(quilha):
-                som_quilha.play()
-                quilhas_coletadas += 1
-            elif quilha.right > 0:
-                restantes.append(quilha)
-        quilhas = restantes
 
-        # Colisão: se encostar em qualquer obstáculo, perde
-        for obs in predios + postes + avioes:
-            if player.colliderect(obs):
-                som_morte.play()
-                game_over = True
-        for peixe in peixes:
-            if player.colliderect(peixe["rect"]):
-                som_morte.play()
-                game_over = True
+def tela_menu():
+    toca_musica("menu.wav", 0.5)
+    aba = "inicio"
+    editando = dados["nome"] == ""  # caixa do nome recebendo letras
+    aviso, aviso_t = "", 0
+    t = 0
+    while True:
+        clock.tick(FPS)
+        t += 1
+        mouse = pygame.mouse.get_pos()
+        clique = jogar = False
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                save.salva(dados)
+                return "sair"
+            if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                clique = True
+            elif editando and ev.type == pygame.TEXTINPUT:
+                dados["nome"] = (dados["nome"] + ev.text)[:12]
+            elif ev.type == pygame.KEYDOWN:
+                if editando:
+                    if ev.key == pygame.K_BACKSPACE:
+                        dados["nome"] = dados["nome"][:-1]
+                    elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        dados["nome"] = dados["nome"].strip()
+                        editando = dados["nome"] == ""
+                        save.salva(dados)
+                elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                    jogar = True
+                elif ev.key == pygame.K_ESCAPE:
+                    aba = "inicio"
 
-        # Cidade do fundo anda devagar (parece estar longe)
-        fundo_x -= 1
-        if fundo_x <= -WIDTH:
-            fundo_x = 0
+        vis = VISUAIS[dados["cenario"]]
+        desenha_fundo(tela, vis, fundo, 0.5)
+        desenha_agua(tela, t, vis["cen"])
+        desenha_titulo(t)
 
-        pontos += 1
+        # ----- Coluna da esquerda: nome, botões e quilhas
+        painel(tela, (20, 100, 260, 480))
+        escreve(tela, "JOGADOR", F_PEQ, CINZA, (38, 112))
+        caixa = pygame.Rect(35, 132, 230, 40)
+        if clique:
+            if caixa.collidepoint(mouse):
+                editando = True
+            elif editando and dados["nome"].strip():
+                dados["nome"] = dados["nome"].strip()
+                editando = False
+                save.salva(dados)
+        pygame.draw.rect(tela, BRANCO if editando else (210, 220, 235), caixa, border_radius=8)
+        pygame.draw.rect(tela, DOURADO if editando else AZUL_UI, caixa, 3, border_radius=8)
+        if dados["nome"]:
+            cursor = "|" if editando and t // 30 % 2 == 0 else ""
+            escreve(tela, dados["nome"] + cursor, F_MED, (20, 30, 60), (caixa.x + 10, caixa.centery), "midleft", False)
+        else:
+            escreve(tela, "Digite seu nome", F_MED, (140, 140, 160), (caixa.x + 10, caixa.centery), "midleft", False)
 
-    # 3) Desenha na tela (o que vem depois fica por cima)
-    window.fill(COR_CEU)                                 # céu
-    window.blit(CIDADE_FUNDO, (fundo_x, 0))              # cidade do fundo (2 cópias lado a lado,
-    window.blit(CIDADE_FUNDO, (fundo_x + WIDTH, 0))      # para nunca aparecer um buraco)
-    for predio in predios:
-        desenha_predio(predio)
-    for poste in postes:
-        desenha_poste(poste)
-    for aviao in avioes:
-        desenha_aviao(aviao)
-    for peixe in peixes:
-        desenha_peixe(peixe)
-    for quilha in quilhas:
-        desenha_quilha(quilha, tempo)
-    desenha_tsunami(tempo)                               # onda gigante (engole o que já passou)
-    desenha_agua(tempo * 3)                              # água por cima da base dos prédios
-    desenha_surfista(player, vel_y, subindo)
+        if botao(tela, (35, 185, 230, 56), "JOGAR", F_GRA, mouse, clique, cor=(40, 165, 90)):
+            jogar = True
+        abas = [("PERSONAGEM", "personagem"), ("PRANCHAS", "pranchas"), ("CENÁRIOS", "cenarios"),
+                ("RECORDES", "recordes"), ("COMO JOGAR", "inicio")]
+        for i, (rotulo, nome_aba) in enumerate(abas):
+            if botao(tela, (35, 255 + i * 52, 230, 44), rotulo, F_MED, mouse, clique, destaque=aba == nome_aba):
+                aba = nome_aba
+        desenha_quilha(tela, 42, 527, escala=0.9, com_brilho=False)
+        escreve(tela, f"{dados['quilhas']} quilhas", F_MED, DOURADO, (75, 541), "midleft")
 
-    texto_pontos = fonte.render(f"Distancia: {pontos // 10} m", True, BRANCO)
-    window.blit(texto_pontos, (WIDTH - texto_pontos.get_width() - 10, 10))
-    texto_quilhas = fonte.render(f"Quilhas: {quilhas_coletadas}", True, COR_QUILHA)
-    window.blit(texto_quilhas, (WIDTH - texto_quilhas.get_width() - 10, 40))
+        # ----- Painel da direita (muda conforme a aba)
+        painel(tela, AREA)
+        msg = None
+        if aba == "inicio":
+            painel_inicio(t)
+        elif aba == "personagem":
+            painel_personagem(mouse, clique)
+        elif aba == "pranchas":
+            msg = painel_pranchas(mouse, clique)
+        elif aba == "cenarios":
+            msg = painel_cenarios(mouse, clique)
+        else:
+            painel_recordes()
+        if msg:
+            aviso, aviso_t = msg, 150
 
-    if game_over:
-        texto_fim = fonte_grande.render("GAME OVER - aperte R", True, (255, 220, 0))
-        window.blit(texto_fim, (WIDTH // 2 - texto_fim.get_width() // 2, HEIGHT // 2))
+        if jogar:
+            if dados["nome"].strip():
+                dados["nome"] = dados["nome"].strip()
+                save.salva(dados)
+                return "intro"
+            editando = True
+            aviso, aviso_t = "Digite seu nome antes de jogar!", 150
+            SOM_ERRO.play()
 
-    pygame.display.update()
+        if aviso_t > 0:  # mensagem rápida embaixo da tela
+            aviso_t -= 1
+            caixa_aviso = pygame.Rect(0, 0, 460, 42)
+            caixa_aviso.center = (AREA.centerx, HEIGHT - 45)
+            painel(tela, caixa_aviso, cor=(0, 0, 0), alpha=210, borda=DOURADO, raio=10)
+            escreve(tela, aviso, F_PEQ, BRANCO, caixa_aviso.center, "center")
+        mostra()
 
-# ===== Finalização =====
-pygame.quit()
+
+# =====================================================================
+# ============================== INTRO ================================
+# =====================================================================
+def tela_intro():
+    """Cena de abertura: cidade tranquila, alerta, o tsunami subindo e levando o surfista."""
+    toca_musica("musica.mp3.mp3", 0.4)
+    vis = VISUAIS[dados["cenario"]]
+    cen = vis["cen"]
+    frente = sprite(dados["personagem"], dados["prancha"])
+    costas = pygame.transform.flip(sprite(dados["personagem"], dados["prancha"], True), True, False)
+    particulas = []
+    DURACAO = 300
+    for f in range(DURACAO):
+        clock.tick(FPS)
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                save.salva(dados)
+                return "sair"
+            if ev.type == pygame.MOUSEBUTTONDOWN or (
+                    ev.type == pygame.KEYDOWN and ev.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_ESCAPE)):
+                return "jogo"
+        if f == 85:
+            SOM_TROVAO.play()
+
+        # A onda sobe (de baixo e da esquerda) entre os frames 90 e 210, freando no final
+        k = min(1.0, max(0.0, (f - 90) / 120))
+        k = 1 - (1 - k) ** 3
+        dx, dy = -520 * (1 - k), 330 * (1 - k)
+        tremor = 7 * math.sin(math.pi * (f - 85) / 145) if 85 <= f < 230 else 0
+
+        # Surfista: boiando -> rema até a onda -> a onda leva ele para cima e ele desce
+        if f < 200:
+            x, pes, img, ang = 470, NIVEL_AGUA + 4 + 2 * math.sin(f / 10), frente, 0
+        elif f < 240:
+            x, pes, img, ang = 470 - 110 * (f - 200) / 40, NIVEL_AGUA + 4, costas, 0
+        else:
+            k2 = (f - 240) / (DURACAO - 240)
+            pes = NIVEL_AGUA + 5 - 170 * math.sin(math.pi * k2)
+            x = x_da_onda(pes)
+            img = costas if k2 < 0.5 else frente
+            ang = 22 * abs(math.cos(math.pi * k2))
+            solta(particulas, x - 12, pes - 2, 2, cen["espuma"], vel=1.2, vida=22, raio=(1.5, 3.5), vx0=-2, vy0=-1.5)
+
+        desenha_fundo(tela, vis, fundo, 0.4 if f < 240 else 1.0)
+        desenha_onda(tela, f, cen, dx, dy)
+        desenha_agua(tela, f, cen)
+        desenha_espuma_base(tela, f, cen, dx, dy)
+        girado = pygame.transform.rotozoom(img, -ang, 1)
+        tela.blit(girado, girado.get_rect(center=(x, pes - 26)))
+        atualiza_particulas(tela, particulas)
+        if cen.get("chuva"):
+            desenha_chuva(tela, f)
+
+        if 15 <= f < 95:
+            escreve_transparente("Mais um dia tranquilo na cidade...", F_GRA, BRANCO, (WIDTH // 2, 200),
+                                 255 * min(1, (f - 15) / 20, (95 - f) / 20))
+        elif 95 <= f < 205:
+            if f // 10 % 2 == 0:
+                escreve(tela, "ALERTA DE TSUNAMI!", F_ENORME, (255, 70, 60), (WIDTH // 2, 200), "center")
+        elif f < 265:
+            escreve(tela, "Segure ESPAÇO para surfar!", F_GRA, DOURADO, (WIDTH // 2, 200), "center")
+        else:
+            escreve(tela, "VAI!", F_ENORME, BRANCO, (WIDTH // 2, 200), "center")
+        escreve(tela, "ESPAÇO pula a intro", F_PEQ, CINZA, (WIDTH - 12, HEIGHT - 12), "bottomright")
+        mostra(tremor)
+    return "jogo"
+
+
+# =====================================================================
+# ============================== JOGO =================================
+# =====================================================================
+def novo_obstaculo(tipo, topo_pes, fase):
+    """Cria um obstáculo na borda direita. Cada tipo fica numa parte da onda:
+    avião em cima, peixe no meio, prédio e poste embaixo."""
+    if tipo == "predio":
+        topo = NIVEL_AGUA - random.randint(80, 190)
+        rect = pygame.Rect(WIDTH, topo, random.randint(55, 85), HEIGHT - topo)
+    elif tipo == "poste":
+        topo = NIVEL_AGUA - random.randint(100, 180)
+        rect = pygame.Rect(WIDTH, topo, 14, HEIGHT - topo)
+    elif tipo == "aviao":  # pode aparecer até no ponto mais alto que a prancha alcança
+        rect = pygame.Rect(WIDTH, random.randint(topo_pes - 45, 230), 80, 26)
+    else:  # peixe: sobe e desce em volta de uma altura central
+        rect = pygame.Rect(WIDTH, 0, 30, 14)
+    return {"tipo": tipo, "rect": rect, "x": float(WIDTH), "semente": random.randint(0, 999),
+            "centro": random.randint(250, 380), "amp": min(60, 30 + 8 * (fase - 1))}
+
+
+def termina_partida(pontos, segundos, pegas, fase):
+    """Guarda quilhas e recorde. Devolve um dicionário com o resultado da partida."""
+    antes = save.melhor_pontuacao(dados)
+    dados["quilhas"] += pegas
+    pessoal = save.registra_recorde(dados, dados["nome"] or "Surfista", int(pontos), int(segundos))
+    liberados = [c["nome"] for c in CENARIOS if antes < c["req"] <= int(pontos)]
+    save.salva(dados)
+    return {"pontos": int(pontos), "segundos": int(segundos), "pegas": pegas, "fase": fase,
+            "recorde": int(pontos) > antes, "pessoal": pessoal, "liberados": liberados,
+            "espera": 45, "giro": 0, "queda": 0}
+
+
+def desenha_hud(pontos, pegas, fase, segundos, recorde, t):
+    mult = 1 + 0.5 * (fase - 1)
+    # Pontos e quilhas (direita)
+    escreve(tela, "PONTOS", F_PEQ, CINZA, (WIDTH - 15, 10), "topright")
+    escreve(tela, int(pontos), F_GRA, BRANCO, (WIDTH - 15, 28), "topright")
+    if pontos > recorde > 0:
+        if t // 15 % 2:
+            escreve(tela, "NOVO RECORDE!", F_PEQ, DOURADO, (WIDTH - 15, 66), "topright")
+    else:
+        escreve(tela, f"RECORDE {recorde}", F_PEQ, CINZA, (WIDTH - 15, 66), "topright")
+    desenha_quilha(tela, WIDTH - 95, 90, escala=0.8, com_brilho=False)
+    escreve(tela, f"x {pegas}", F_MED, DOURADO, (WIDTH - 15, 96), "topright")
+    # Fase, multiplicador e barra até a próxima fase (centro)
+    caixa = pygame.Rect(WIDTH // 2 - 90, 10, 180, 50)
+    painel(tela, caixa, alpha=150, raio=12)
+    escreve(tela, f"FASE {fase}", F_MED, BRANCO, (caixa.x + 12, caixa.y + 8))
+    escreve(tela, f"x{mult:g}", F_MED, DOURADO, (caixa.right - 12, caixa.y + 8), "topright")
+    barra = pygame.Rect(caixa.x + 12, caixa.y + 34, 156, 7)
+    pygame.draw.rect(tela, (40, 50, 70), barra, border_radius=4)
+    progresso = (segundos % DURACAO_FASE) / DURACAO_FASE
+    pygame.draw.rect(tela, DOURADO, (barra.x, barra.y, int(barra.w * progresso), barra.h), border_radius=4)
+    escreve(tela, formata_tempo(segundos), F_PEQ, CINZA, (caixa.centerx, caixa.bottom + 12), "center")
+
+
+def tela_jogo():
+    """Uma partida. Devolve "jogo" (jogar de novo), "menu" ou "sair"."""
+    toca_musica("musica.mp3.mp3", 0.4)
+    vis = VISUAIS[dados["cenario"]]
+    cen = vis["cen"]
+    prancha = PRANCHAS[dados["prancha"]]
+    agilidade = prancha["agilidade"]
+    topo_pes = TOPO_PADRAO - prancha["altura"]  # pranchas melhores sobem mais na onda
+    frente = sprite(dados["personagem"], dados["prancha"])
+    costas = pygame.transform.flip(sprite(dados["personagem"], dados["prancha"], True), True, False)
+    recorde = save.melhor_pontuacao(dados)
+
+    player = pygame.Rect(0, 0, 40, 40)         # hitbox (o x é calculado pela onda)
+    player_y = NIVEL_AGUA - player.height + 5  # y "de verdade" (com casas decimais)
+    vel_y = angulo = 0.0
+    subindo = False
+    obstaculos, quilhas, particulas, textos = [], [], [], []
+    contador, quilha_feita = 0, False
+    frames = t = 0         # frames jogados / relógio das animações
+    pontos, pegas, fase = 0.0, 0, 1
+    velocidade = VEL_INICIAL
+    banner = tremor = flash = 0
+    pausado = False
+    fim = None             # vira um dicionário com o resultado quando o surfista cai
+
+    while True:
+        clock.tick(FPS)
+        mouse = pygame.mouse.get_pos()
+        clique = False
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                save.salva(dados)
+                return "sair"
+            if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                clique = True
+            if ev.type == pygame.KEYDOWN:
+                if fim:
+                    if fim["espera"] <= 0 and ev.key in (pygame.K_r, pygame.K_RETURN):
+                        return "jogo"
+                    if fim["espera"] <= 0 and ev.key in (pygame.K_m, pygame.K_ESCAPE):
+                        return "menu"
+                elif ev.key in (pygame.K_p, pygame.K_ESCAPE):
+                    pausado = not pausado
+                elif pausado and ev.key == pygame.K_m:
+                    return "menu"
+
+        segundos = frames / FPS
+        mult = 1 + 0.5 * (fase - 1)
+        if not pausado:
+            t += 1
+
+        # ===== Atualiza o jogo (só enquanto está surfando) =====
+        if not pausado and not fim:
+            frames += 1
+            # Fases: a cada DURACAO_FASE segundos fica mais difícil e os pontos valem mais
+            nova_fase = 1 + int(segundos // DURACAO_FASE)
+            if nova_fase > fase:
+                fase, banner, flash = nova_fase, 150, 5
+                SOM_FASE.play()
+            velocidade = min(VEL_MAX_JOGO, VEL_INICIAL + ACELERACAO * segundos)
+            espaco = max(300, ESPACO_OBSTACULOS - 30 * (fase - 1))
+            intervalo = max(18, int(espaco / velocidade))  # frames entre um obstáculo e outro
+
+            # Física: segurando ESPAÇO/mouse sobe; a gravidade puxa sempre
+            teclas = pygame.key.get_pressed()
+            if teclas[pygame.K_SPACE] or teclas[pygame.K_UP] or pygame.mouse.get_pressed()[0]:
+                vel_y += IMPULSO * agilidade
+            vel_y += GRAVIDADE
+            vel_max = VEL_MAXIMA * agilidade
+            vel_y = max(-vel_max, min(vel_max, vel_y))
+            player_y += vel_y
+            if player_y < topo_pes - player.height:  # não passa do ponto mais alto da prancha
+                player_y, vel_y = topo_pes - player.height, 0
+            if player_y > NIVEL_AGUA - player.height + 5:  # nem afunda na água
+                player_y, vel_y = NIVEL_AGUA - player.height + 5, 0
+            player.y = int(player_y)
+            player.centerx = int(x_da_onda(player.bottom))  # encosta na face da onda
+            if vel_y < 0:
+                subindo = True
+            elif vel_y > 0:
+                subindo = False
+            angulo += (min(30, abs(vel_y) * 3.5) - angulo) * 0.25  # inclina suavemente
+
+            # Gotinhas saindo de trás da prancha
+            if random.random() < 0.6 + abs(vel_y) * 0.05:
+                solta(particulas, player.centerx - 12, player.bottom - 2, 1 + (abs(vel_y) > 4), cen["espuma"],
+                      vel=1.2, vida=24, raio=(1.5, 3.5), vx0=-velocidade * 0.4, vy0=-1.5 - abs(vel_y) * 0.2)
+
+            # Cria obstáculos. A partir da fase 2 podem vir em dupla (avião + prédio/poste)
+            contador += 1
+            if contador >= intervalo:
+                contador, quilha_feita = 0, False
+                if fase >= 2 and random.random() < min(0.5, 0.2 * (fase - 1)):
+                    obstaculos.append(novo_obstaculo("aviao", topo_pes, fase))
+                    obstaculos.append(novo_obstaculo(random.choice(["predio", "poste"]), topo_pes, fase))
+                else:
+                    tipo = random.choice(["predio", "poste", "aviao", "aviao", "peixe", "peixe"])
+                    obstaculos.append(novo_obstaculo(tipo, topo_pes, fase))
+            # A quilha nasce no meio do caminho entre dois obstáculos (nunca fica dentro de um).
+            # Algumas nascem bem no alto: só pranchas melhores alcançam!
+            if not quilha_feita and contador >= intervalo // 2:
+                y = random.randint(TOPO_PADRAO - 130, NIVEL_AGUA - 35)
+                quilhas.append({"tipo": "quilha", "rect": pygame.Rect(WIDTH, y, 24, 30), "x": float(WIDTH)})
+                quilha_feita = True
+
+            # Move tudo para a esquerda na mesma velocidade
+            for o in obstaculos + quilhas:
+                o["x"] -= velocidade
+                o["rect"].x = int(o["x"])
+                if o["tipo"] == "peixe":
+                    o["rect"].y = int(o["centro"] + o["amp"] * math.sin(o["x"] / 40))
+            obstaculos = [o for o in obstaculos if o["rect"].right > -60]
+
+            # Quilhas: as que o surfista pegou viram brilho; as que saíram da tela somem
+            alcance = player.inflate(14, 14)
+            restantes = []
+            for q in quilhas:
+                if alcance.colliderect(q["rect"]):
+                    pegas += 1
+                    SOM_QUILHA.play()
+                    solta(particulas, q["rect"].centerx, q["rect"].centery, 14, DOURADO, vel=4)
+                    textos.append({"x": q["rect"].centerx, "y": q["rect"].y, "vida": 45})
+                elif q["rect"].right > 0:
+                    restantes.append(q)
+            quilhas = restantes
+
+            # Colisão (hitbox um pouco menor que o desenho, para ser justo)
+            corpo = player.inflate(-14, -10)
+            for o in obstaculos:
+                caixa = o["rect"].inflate(-6, -6) if o["tipo"] == "aviao" else o["rect"]
+                if corpo.colliderect(caixa):
+                    SOM_MORTE.play()
+                    solta(particulas, player.centerx, player.centery, 40, cen["espuma"], vel=6, vida=45, raio=(2, 5))
+                    tremor = 18
+                    pygame.mixer.music.set_volume(0.15)
+                    fim = termina_partida(pontos, segundos, pegas, fase)
+                    break
+
+            # Quanto mais rápido, mais pontos (e ainda multiplica pela fase)
+            pontos += velocidade * mult * 0.1
+
+        # Raios na tempestade
+        if cen.get("chuva") and not pausado and random.random() < 0.003:
+            flash = 10
+            SOM_TROVAO.play()
+
+        # ===== Desenha (o que vem depois fica por cima) =====
+        fator = 0 if pausado or fim else velocidade / VEL_INICIAL
+        desenha_fundo(tela, vis, fundo, fator)
+        for o in obstaculos:
+            desenha_obstaculo(tela, o, cen)
+        for q in quilhas:
+            desenha_quilha(tela, q["rect"].x, q["rect"].y + int(4 * math.sin(t / 8)))
+        desenha_onda(tela, t, cen)
+        if fim:  # o surfista caiu: gira e afunda (desenhado antes da água)
+            if not pausado:
+                fim["giro"] += 9
+                fim["queda"] = min(70, fim["queda"] + 1.5)
+                fim["espera"] -= 1
+            img = pygame.transform.rotozoom(frente, fim["giro"], 1)
+            tela.blit(img, img.get_rect(center=(player.centerx, player.bottom - 26 + fim["queda"])))
+        desenha_agua(tela, t, cen)
+        desenha_espuma_base(tela, t, cen)
+        if not fim:
+            img = pygame.transform.rotozoom(costas if subindo else frente, -angulo, 1)
+            tela.blit(img, img.get_rect(center=(player.centerx, player.bottom - 26)))
+        atualiza_particulas(tela, particulas, mover=not pausado)
+        for tx in textos:  # "+1" subindo quando pega quilha
+            if not pausado:
+                tx["y"] -= 1
+                tx["vida"] -= 1
+            escreve_transparente("+1", F_MED, DOURADO, (tx["x"], tx["y"]), tx["vida"] * 8)
+        textos = [tx for tx in textos if tx["vida"] > 0]
+        if cen.get("chuva"):
+            desenha_chuva(tela, t)
+        if flash > 0:
+            clarao = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            clarao.fill((255, 255, 255, flash * 18))
+            tela.blit(clarao, (0, 0))
+            flash -= 1
+
+        desenha_hud(pontos, pegas, fase, segundos, recorde, t)
+        if banner > 0 and not fim:  # aviso de fase nova
+            alpha = min(255, banner * 6)
+            y = 200 - max(0, banner - 130) * 3
+            escreve_transparente(f"FASE {fase}!", F_ENORME, DOURADO, (WIDTH // 2, y), alpha)
+            escreve_transparente(f"Mais rápido... pontos x{mult:g}!", F_MED, BRANCO, (WIDTH // 2, y + 50), alpha)
+            if not pausado:
+                banner -= 1
+
+        if pausado:
+            escuro = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            escuro.fill((0, 0, 0, 140))
+            tela.blit(escuro, (0, 0))
+            escreve(tela, "PAUSADO", F_ENORME, BRANCO, (WIDTH // 2, 220), "center")
+            if botao(tela, (290, 290, 220, 50), "CONTINUAR (P)", F_MED, mouse, clique):
+                pausado = False
+            if botao(tela, (290, 355, 220, 50), "MENU (M)", F_MED, mouse, clique, cor=(120, 70, 160)):
+                return "menu"
+
+        if fim:
+            caixa = pygame.Rect(170, 110, 460, 390)
+            painel(tela, caixa, alpha=225, borda=DOURADO)
+            escreve(tela, "WIPEOUT!", F_ENORME, (255, 90, 70), (WIDTH // 2, 165), "center")
+            escreve(tela, f"Pontos: {fim['pontos']}", F_GRA, BRANCO, (WIDTH // 2, 225), "center")
+            escreve(tela, f"Tempo: {formata_tempo(fim['segundos'])}    Fase: {fim['fase']}", F_MED, CINZA,
+                    (WIDTH // 2, 265), "center")
+            escreve(tela, f"Quilhas: +{fim['pegas']}  (total {dados['quilhas']})", F_MED, DOURADO,
+                    (WIDTH // 2, 300), "center")
+            if fim["recorde"] and fim["pontos"] > 0:
+                if t // 15 % 2:
+                    escreve(tela, "NOVO RECORDE!", F_GRA, DOURADO, (WIDTH // 2, 342), "center")
+            elif fim["pessoal"]:
+                escreve(tela, "Seu melhor resultado!", F_MED, VERDE, (WIDTH // 2, 342), "center")
+            for i, nome in enumerate(fim["liberados"]):
+                escreve(tela, f"Cenário liberado: {nome}!", F_PEQ, (120, 230, 255), (WIDTH // 2, 375 + i * 22), "center")
+            if fim["espera"] <= 0:
+                if botao(tela, (190, 430, 200, 50), "DE NOVO (R)", F_MED, mouse, clique, cor=(40, 165, 90)):
+                    return "jogo"
+                if botao(tela, (410, 430, 200, 50), "MENU (M)", F_MED, mouse, clique, cor=(120, 70, 160)):
+                    return "menu"
+
+        mostra(tremor)
+        if tremor > 0:
+            tremor -= 1
+
+
+# ===== Loop das telas =====
+def main():
+    estado = "menu"
+    while estado != "sair":
+        if estado == "menu":
+            estado = tela_menu()
+        elif estado == "intro":
+            estado = tela_intro()
+        else:
+            estado = tela_jogo()
+    save.salva(dados)
+    pygame.quit()
+
+
+if __name__ == "__main__":
+    main()
