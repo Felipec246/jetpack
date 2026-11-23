@@ -136,9 +136,16 @@ def cria_surfista(p, prancha, costas=False, escala=1):
     linha(pele, (25, 17), (25, 14), 3.5)  # pescoço
     # Cabelo que fica atrás da cabeça
     if estilo == "comprido":
-        pygame.draw.ellipse(img, cabelo, R(15.5, 3, 19, 21))
+        if costas:
+            pygame.draw.ellipse(img, cabelo, R(15.5, 3, 19, 21))  # cabelo caindo nas costas
+        else:
+            # De frente: o cabelo não pode passar embaixo do queixo (parecia barba).
+            # Fica só atrás da cabeça e em duas mechas nas laterais, até os ombros.
+            bola(cabelo, (25, 8), 9.5)
+            pygame.draw.ellipse(img, cabelo, R(15, 6, 6, 17))   # mecha esquerda
+            pygame.draw.ellipse(img, cabelo, R(29, 6, 6, 17))   # mecha direita
     elif estilo == "black":
-        bola(cabelo, (25, 8.5), 11)
+        bola(cabelo, (25, 7.5), 11)  # um pouco mais para cima, para não aparecer sob o queixo
     if costas:
         bola(cabelo, (25, 10), 8)  # nuca
         if estilo == "curto":

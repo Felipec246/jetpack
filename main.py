@@ -151,9 +151,7 @@ def painel_personagem(mouse, clique):
                borda=DOURADO if dados["personagem"] == i else None, raio=10)
         img = sprite(i, dados["prancha"], False, 2)
         tela.blit(img, img.get_rect(midtop=(card.centerx, card.y + 8)))
-        escreve(tela, p["nome"], F_MED, BRANCO, (card.centerx, card.y + 137), "center")
-        escreve(tela, p["desc"][0], F_PEQ, CINZA, (card.centerx, card.y + 160), "center")
-        escreve(tela, p["desc"][1], F_PEQ, CINZA, (card.centerx, card.y + 179), "center")
+        escreve(tela, p["nome"], F_MED, BRANCO, (card.centerx, card.y + 158), "center")
         if em_cima and clique:
             dados["personagem"] = i
             save.salva(dados)
@@ -180,7 +178,7 @@ def painel_pranchas(mouse, clique):
         if equipada:
             pygame.draw.rect(tela, (40, 150, 80), bt, border_radius=12)
             escreve(tela, "EQUIPADA", F_PEQ, BRANCO, bt.center, "center")
-        elif i in dados["pranchas"]:
+        elif save.tem_prancha(dados, i):
             if botao(tela, bt, "EQUIPAR", F_MED, mouse, clique):
                 dados["prancha"] = i
                 save.salva(dados)
@@ -208,7 +206,7 @@ def painel_cenarios(mouse, clique):
     msg = None
     for i, cen in enumerate(CENARIOS):
         card = pygame.Rect(AREA.x + 20 + (i % 2) * 225, AREA.y + 82 + (i // 2) * 195, 215, 185)
-        liberado = melhor >= cen["req"]
+        liberado = save.cenario_liberado(dados, cen)
         escolhido = dados["cenario"] == i
         em_cima = card.collidepoint(mouse)
         painel(tela, card, cor=(30, 60, 100) if em_cima else (20, 45, 80), alpha=230,
@@ -350,6 +348,7 @@ def tela_menu():
         if jogar:
             if dados["nome"].strip():
                 dados["nome"] = dados["nome"].strip()
+                save.ajusta_escolhas(dados)  # quem não é "john john" não joga com o que não liberou
                 save.salva(dados)
                 return "intro"
             editando = True
