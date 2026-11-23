@@ -1,0 +1,18 @@
+{
+  "nome": "isabela",
+  "quilhas": 139,
+  "pranchas": [
+    0,
+    1
+  ],
+  "prancha": 1,
+  "personagem": 0,
+  "cenario": 1,
+  "recordes": [
+    {
+      "nome": "isabela",
+      "pontos": 3350,
+      "tempo": 48
+    }
+  ]
+}
