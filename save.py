@@ -62,3 +62,32 @@ def registra_recorde(dados, nome, pontos, tempo):
 def melhor_pontuacao(dados):
     """Maior pontuação de todos os jogadores (é ela que libera os cenários)."""
     return max((r["pontos"] for r in dados["recordes"]), default=0)
+
+
+# ===== Modo demonstração =====
+NOME_DEMO = "john john"
+
+
+def modo_demo(dados):
+    """True se o nome do jogador é o da demonstração: aí todas as pranchas e cenários ficam liberados.
+    Nada disso é gravado no save; é decidido na hora, só olhando o nome."""
+    return dados["nome"].strip().lower() == NOME_DEMO
+
+
+def tem_prancha(dados, i):
+    """O jogador pode usar a prancha i? (comprou ou está no modo demonstração)"""
+    return modo_demo(dados) or i in dados["pranchas"]
+
+
+def cenario_liberado(dados, cenario):
+    """O cenário está liberado? (recorde suficiente ou modo demonstração)"""
+    return modo_demo(dados) or melhor_pontuacao(dados) >= cenario["req"]
+
+
+def ajusta_escolhas(dados):
+    """Se o jogador escolheu uma prancha ou um cenário que não pode usar
+    (por exemplo, saiu do modo demonstração trocando de nome), volta para os iniciais."""
+    if not tem_prancha(dados, dados["prancha"]):
+        dados["prancha"] = 0
+    if not cenario_liberado(dados, CENARIOS[dados["cenario"]]):
+        dados["cenario"] = 0

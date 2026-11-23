@@ -45,17 +45,17 @@ COR_PEIXE = (150, 190, 210)
 # ===== Personagens =====
 # estilo do cabelo: "curto", "comprido" ou "black"
 PERSONAGENS = [
-    {"nome": "Léo", "genero": "homem", "estilo": "curto", "desc": ("Pele clara", "Olhos azuis"),
+    {"nome": "Léo", "genero": "homem", "estilo": "curto",
      "pele": (243, 205, 175), "cabelo": (235, 195, 90), "olhos": (50, 120, 230), "roupa": (220, 50, 50)},
-    {"nome": "Bia", "genero": "mulher", "estilo": "comprido", "desc": ("Pele clara", "Olhos verdes"),
+    {"nome": "Bia", "genero": "mulher", "estilo": "comprido",
      "pele": (245, 210, 185), "cabelo": (200, 85, 35), "olhos": (40, 160, 80), "roupa": (30, 170, 210)},
-    {"nome": "Davi", "genero": "homem", "estilo": "curto", "desc": ("Pele morena", "Olhos castanhos"),
+    {"nome": "Davi", "genero": "homem", "estilo": "curto",
      "pele": (198, 140, 95), "cabelo": (35, 25, 18), "olhos": (110, 65, 25), "roupa": (240, 130, 30)},
-    {"nome": "Luna", "genero": "mulher", "estilo": "comprido", "desc": ("Pele morena", "Olhos cor de mel"),
+    {"nome": "Luna", "genero": "mulher", "estilo": "comprido",
      "pele": (192, 135, 92), "cabelo": (95, 55, 28), "olhos": (175, 120, 40), "roupa": (235, 80, 150)},
-    {"nome": "Kaio", "genero": "homem", "estilo": "curto", "desc": ("Pele negra", "Olhos escuros"),
+    {"nome": "Kaio", "genero": "homem", "estilo": "curto",
      "pele": (105, 66, 42), "cabelo": (18, 12, 8), "olhos": (55, 30, 15), "roupa": (250, 190, 30)},
-    {"nome": "Nina", "genero": "mulher", "estilo": "black", "desc": ("Pele negra", "Olhos claros"),
+    {"nome": "Nina", "genero": "mulher", "estilo": "black",
      "pele": (98, 60, 38), "cabelo": (25, 16, 10), "olhos": (90, 175, 165), "roupa": (140, 80, 220)},
 ]
 
