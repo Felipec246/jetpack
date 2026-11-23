@@ -65,7 +65,10 @@ Na primeira vez o jogo demora alguns segundos ("Preparando as ondas...") porque 
 
 ## Créditos dos sons e da música
 
-(preencher: de onde vieram `musica.mp3.mp3`, `coletavel.mp3.mp3` e `morte.mp3.mp3`; os arquivos `.wav` são gerados por `sons.py`)
+- Música (`musica.mp3.mp3`): Pixabay, [Pixabay Music](https://pixabay.com/music/).
+- Efeitos sonoros (`coletavel.mp3.mp3` e `morte.mp3.mp3`): Pixabay, [Pixabay Sound Effects](https://pixabay.com/sound-effects/).
+
+Os efeitos `.wav` adicionais são gerados pelo próprio jogo em `sons.py`. Os links individuais e os nomes dos autores dos arquivos baixados não foram registrados.
 
 ## Uso de IA
 
